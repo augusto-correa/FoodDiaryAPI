@@ -1,3 +1,4 @@
+using FoodDiary.WebAPI.DAL.Interfaces;
 using FoodDiary.WebAPI.DatabaseContext;
 using FoodDiary.WebAPI.Models;
 using Microsoft.AspNetCore.Mvc;
@@ -9,25 +10,24 @@ namespace FoodDiary.WebAPI.Controllers
     [ApiController]
     public class MealsController : ControllerBase
     {
-        private readonly FoodDiaryContext _context;
+        private readonly IMealDAO _mealDAO;
 
-        public MealsController(FoodDiaryContext context)
+        public MealsController(FoodDiaryContext context, IMealDAO mealDAO)
         {
-            _context = context;
+            _mealDAO = mealDAO;
         }
 
         [HttpGet]
         public async Task<ActionResult<IEnumerable<MealDTO>>> GetMeals()
         {
-            return await _context.Meals
-                .Select(x => MealDTO.FromMeal(x))
-                .ToListAsync();
+            var meals = await _mealDAO.FindAllAsync();
+            return new ActionResult<IEnumerable<MealDTO>>(meals);
         }
 
         [HttpGet("{id}")]
         public async Task<ActionResult<MealDTO>> GetMeal(int id)
         {
-            var meal = await _context.Meals.FindAsync(id);
+            var meal = await _mealDAO.FindAsync(id);
 
             if (meal == null)
             {
@@ -45,21 +45,20 @@ namespace FoodDiary.WebAPI.Controllers
                 return BadRequest();
             }
 
-            var meal = await _context.Meals.FindAsync(id);
+            var meal = await _mealDAO.FindAsync(id);
             if (meal == null)
             {
                 return NotFound();
             }
 
-            meal.Name = mealDTO.Name;
-            meal.Date = mealDTO.Date;
-            meal.Foods = mealDTO.Foods;
-
             try
             {
-                await _context.SaveChangesAsync();
+                meal.Name = mealDTO.Name;
+                meal.Date = mealDTO.Date;
+                meal.Foods = mealDTO.Foods;
+                await _mealDAO.UpdateAsync(meal);
             }
-            catch (DbUpdateConcurrencyException) when (!MealExists(id))
+            catch (DbUpdateConcurrencyException) when (!MealExists(id).Result)
             {
                 return NotFound();
             }
@@ -77,33 +76,32 @@ namespace FoodDiary.WebAPI.Controllers
                 Date = mealDTO.Date
             };
 
-            _context.Meals.Add(meal);
-            await _context.SaveChangesAsync();
+            await _mealDAO.AddAsync(meal);
 
             return CreatedAtAction(
-                nameof(GetMeal),
+                nameof(CreateMeal),
                 new { id = meal.Id },
                 MealDTO.FromMeal(meal));
         }
 
         [HttpDelete("{id}")]
-        public async Task<IActionResult> DeleteMeal(long id)
+        public async Task<IActionResult> DeleteMeal(int id)
         {
-            var meal = await _context.Meals.FindAsync(id);
+            var meal = await _mealDAO.FindAsync(id);
 
             if (meal == null)
             {
                 return NotFound();
             }
 
-            _context.Meals.Remove(meal);
-            await _context.SaveChangesAsync();
+            await _mealDAO.DeleteAsync(meal);
             return NoContent();
         }
 
-        private bool MealExists(long id)
+        private async Task<bool> MealExists(long id)
         {
-            return _context.Meals.Any(e => e.Id == id);
+            var meals = await _mealDAO.FindAllAsync();
+            return meals.Any(e => e.Id == id);
         }
     }
 }
